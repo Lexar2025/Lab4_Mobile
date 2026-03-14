@@ -1,50 +1,323 @@
-# Welcome to your Expo app 👋
+# Лабораторная работа №4: Асинхронные запросы и работа с данными
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## Цель работы
+Изучение асинхронного программирования в React Native, работы с fetch, async/await, хука useEffect, получения данных с сервера и отображения их в FlatList.
 
-## Get started
+## Структура проекта
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+Lab4/
+├── app/
+│   ├── index.tsx          # Главный экран: список пользователей
+│   ├── _layout.tsx        # Конфигурация навигации (Stack)
+│   └── user/
+│       └── [id].tsx       # Экран деталей пользователя (динамический маршрут)
+├── package.json           # Зависимости проекта
+└── README.md              # Данный файл
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Используемые технологии
 
-## Learn more
+- **React Native** — фреймворк для создания мобильных приложений
+- **Expo Router** — файловая маршрутизация на основе папок
+- **TypeScript** — типизация для надёжности кода
+- **Fetch API** — асинхронные HTTP-запросы
+- **Async/Await** — современный синтаксис работы с промисами
 
-To learn more about developing your project with Expo, look at the following resources:
+---
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Экран 1: Список пользователей (`app/index.tsx`)
 
-## Join the community
+### Архитектура компонента
 
-Join our community of developers creating universal apps.
+Компонент реализует следующие требования:
+1. Загрузка данных с публичного API при монтировании
+2. Отображение индикатора загрузки
+3. Рендеринг списка через FlatList
+4. Pull-to-Refresh для обновления данных
+5. Навигация на экран деталей при тапе
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### Ключевые элементы
+
+#### Состояние (State)
+
+```typescript
+const [users, setUsers] = useState<User[]>([]);           // Массив пользователей
+const [isLoading, setIsLoading] = useState(true);         // Флаг первой загрузки
+const [isRefreshing, setIsRefreshing] = useState(false);  // Флаг обновления
+```
+
+- `users` — хранит полученные данные
+- `isLoading` — показывает индикатор при первоначальной загрузке
+- `isRefreshing` — управляет состоянием свайпа для обновления
+
+#### Функция загрузки данных
+
+```typescript
+const fetchUsers = async () => {
+  try {
+    const response = await fetch('https://jsonplaceholder.typicode.com/users');
+    const json = await response.json();
+    setUsers(json);
+  } catch (error) {
+    console.error('Ошибка при загрузке пользователей:', error);
+  } finally {
+    setIsLoading(false);
+    setIsRefreshing(false);
+  }
+};
+```
+
+- **async/await** делает асинхронный код читаемым как синхронный
+- **try/catch/finally** обеспечивает обработку ошибок и сброс флагов загрузки
+- **fetch()** возвращает Promise, который разрешается в Response объект
+
+#### Хук useEffect
+
+```typescript
+useEffect(() => {
+  fetchUsers();
+}, []);
+```
+
+- Пустой массив зависимостей `[]` означает: выполнить только при монтировании компонента
+- Это предотвращает бесконечные перезагрузки данных
+
+#### Pull-to-Refresh
+
+```typescript
+const onRefresh = useCallback(() => {
+  setIsRefreshing(true);
+  fetchUsers();
+}, []);
+
+// В FlatList:
+refreshControl={
+  <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+}
+```
+
+- `useCallback` мемоизирует функцию, предотвращая лишние ре-рендеры
+- `RefreshControl` — нативный компонент для жестового обновления
+
+#### Навигация
+
+```typescript
+const router = useRouter();
+
+const handleUserPress = (userId: number) => {
+  router.push(`/user/${userId}`);
+};
+```
+
+- `useRouter()` из `expo-router` предоставляет методы навигации
+- Динамический маршрут `/user/[id]` принимает параметр `id`
+
+#### Рендеринг списка
+
+```typescript
+<FlatList
+  data={users}
+  renderItem={renderItem}
+  keyExtractor={(item) => item.id.toString()}
+  refreshControl={...}
+/>
+```
+
+- **data** — массив элементов для отображения
+- **renderItem** — функция, возвращающая JSX для каждого элемента
+- **keyExtractor** — уникальный ключ для оптимизации ре-рендеринга
+- **FlatList** виртуализирует список: рендерит только видимые элементы
+
+---
+
+## Экран 2: Детали пользователя (`app/user/[id].tsx`)
+
+### Динамическая маршрутизация
+
+Файл `[id].tsx` создаёт динамический маршрут. Параметр `id` извлекается через:
+
+```typescript
+const { id } = useLocalSearchParams<{ id: string }>();
+```
+
+- `useLocalSearchParams` возвращает параметры текущего маршрута
+- Типизация `<{ id: string }>` обеспечивает type-safe доступ
+
+### Загрузка данных конкретного пользователя
+
+```typescript
+useEffect(() => {
+  const fetchUser = async () => {
+    try {
+      const response = await fetch(`https://jsonplaceholder.typicode.com/users/${id}`);
+      const json = await response.json();
+      setUser(json);
+    } catch (error) {
+      console.error('Ошибка при загрузке пользователя:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (id) {
+    fetchUser();
+  }
+}, [id]);
+```
+
+- Зависимость `[id]` означает: перезагрузить данные при изменении `id`
+- Проверка `if (id)` предотвращает запрос при неопределённом параметре
+
+### Отображение данных
+
+Данные организованы в секции:
+1. **Header** — имя и юзернейм на цветном фоне
+2. **Контакты** — email, телефон, сайт
+3. **Адрес** — вложенные поля объекта address
+4. **Компания** — информация о компании пользователя
+
+Каждая секция использует стили для визуального разделения и иерархии.
+
+### Обработка состояний
+
+```typescript
+if (isLoading) {
+  return <ActivityIndicator />;  // Индикатор загрузки
+}
+
+if (!user) {
+  return <Text>Пользователь не найден</Text>;  // Обработка ошибки
+}
+```
+
+- Явная проверка состояний улучшает UX
+- Пользователь всегда видит обратную связь
+
+---
+
+## Принципы разработки, применённые в проекте
+
+### 1. KISS (Keep It Simple, Stupid)
+- Минимальное количество состояний
+- Прямая логика загрузки данных без излишних абстракций
+
+### 2. DRY (Don't Repeat Yourself)
+- Функция `fetchUsers` переиспользуется для первой загрузки и обновления
+- Стили вынесены в отдельный объект `StyleSheet`
+
+### 3. SOLID / SLON
+- **Single Responsibility**: каждый компонент отвечает за один экран
+- **Open/Closed**: компоненты легко расширяются без изменения существующего кода
+- **Liskov Substitution**: интерфейсы типов совместимы с ожидаемой структурой API
+
+### 4. YAGNI (You Aren't Gonna Need It)
+- Нет избыточной валидации или кэширования — только требуемый функционал
+- Простая обработка ошибок через console.error (достаточно для лабораторной)
+
+### 5. Clean Code
+- Понятные имена переменных и функций (`fetchUsers`, `handleUserPress`)
+- Логическая группировка кода: состояние → эффекты → обработчики → рендер
+- Типизация TypeScript предотвращает ошибки времени выполнения
+
+---
+
+## Работа с API
+
+### Endpoint
+```
+https://jsonplaceholder.typicode.com/users
+```
+
+### Метод
+```
+GET
+```
+
+### Пример ответа
+```json
+[
+  {
+    "id": 1,
+    "name": "Leanne Graham",
+    "username": "Bret",
+    "email": "Sincere@april.biz",
+    "address": { ... },
+    "phone": "1-770-736-8031",
+    "website": "hildegard.org",
+    "company": { ... }
+  }
+]
+```
+
+### Обработка ошибок
+- Сетевые ошибки перехватываются через `try/catch`
+- Ошибки логируются в консоль для отладки
+- Пользователю показывается индикатор загрузки или сообщение об ошибке
+
+---
+
+## Производительность
+
+### FlatList vs ScrollView
+- **FlatList** рендерит только видимые элементы + небольшой буфер
+- При 1000+ элементах это критично для плавности прокрутки
+- **ScrollView** рендерит всё содержимое сразу — не подходит для больших списков
+
+### Оптимизация
+- `keyExtractor` позволяет React эффективно обновлять список
+- Мемоизация `onRefresh` через `useCallback` предотвращает лишние ре-рендеры
+- Разделение состояний `isLoading` и `isRefreshing` даёт точный контроль над индикаторами
+
+---
+
+## Запуск проекта
+
+```bash
+# Установка зависимостей
+npm install
+
+# Запуск в режиме разработки
+npx expo start
+
+# Открыть в:
+# - Экспресс-приложении Expo Go на телефоне
+# - Эмуляторе Android / iOS
+# - Веб-браузере
+```
+
+---
+
+## Тестирование
+
+1. **Первичная загрузка**: при запуске приложения отображается индикатор, затем список
+2. **Pull-to-Refresh**: свайп вниз обновляет данные, индикатор появляется внутри списка
+3. **Навигация**: тап по пользователю открывает экран деталей с параметром `id`
+4. **Экран деталей**: отображаются все поля пользователя, загрузка обрабатывается корректно
+5. **Обработка ошибок**: при отсутствии сети или неверном `id` показывается сообщение
+
+---
+
+## Возможные улучшения (не реализованы в рамках лабораторной)
+
+1. **Кэширование данных** — использовать React Query или SWR для уменьшения запросов
+2. **Пагинация** — загружать пользователей порциями при прокрутке
+3. **Поиск/фильтрация** — добавить поле ввода для фильтрации списка
+4. **Локализация** — вынести тексты в отдельные файлы для поддержки языков
+5. **Темизация** — добавить поддержку светлой/тёмной темы
+
+---
+
+## Выводы
+
+В ходе выполнения лабораторной работы были изучены и применены:
+
+✅ Асинхронное программирование через async/await  
+✅ Работа с Fetch API для получения данных  
+✅ Хук useEffect для побочных эффектов  
+✅ Компонент FlatList для эффективного рендеринга списков  
+✅ Навигация между экранами через Expo Router  
+✅ Обработка состояний загрузки и ошибок  
+✅ Жестовое обновление через Pull-to-Refresh  
+
+Проект демонстрирует базовые паттерны работы с данными в мобильных приложениях на React Native и соответствует принципам чистого кода.
